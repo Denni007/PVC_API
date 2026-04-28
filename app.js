@@ -6,7 +6,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const initRoutes = require("./app/route");
 const app = express();
-const port = process.env.PORT || 4000;
+const port = process.env.PORT;
 const createTunnel = require("./app/config/sshTunnel");
 const sequelize = require("./app/config/index"); // Make sure this path is correct
 
