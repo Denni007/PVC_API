@@ -40,8 +40,22 @@ const logRequestMiddleware = (req, res, next) => {
 require("./app/util/cron");
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "app", "views"));
-app.use(cors());
+const corsOptions = {
+  origin: [
+    "https://accountsv2.harekrishnaindustries.com"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "token",
+    "ngrok-skip-browser-warning" // 🔥 ADD THIS
+  ],
+  credentials: true
+};
 
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 app.use(logRequestMiddleware);
