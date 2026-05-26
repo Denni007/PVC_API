@@ -52,6 +52,8 @@ const C_Ledger = sequelize.define("P_C_Ledger", {
         type: DataTypes.DATEONLY,
         allowNull: false,
     }
+}, {
+    paranoid: true
 });
 
 company.hasMany(C_Ledger, { foreignKey: "companyId", onDelete: "CASCADE" });
