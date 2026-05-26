@@ -33,13 +33,20 @@ const { Workbook } = require("exceljs");
 const C_salesinvoice = require("../models/C_salesinvoice");
 const C_DailyBalance = require("../models/C_DailyBalance");
 const puppeteer = require("puppeteer");
+const sequelize = require("../config/index");
+
 
 exports.C_ledger_settlement = async (req, res) => {
+  // transaction is already defined in the calling context
+  const transaction = await sequelize.transaction();
+
   try {
     const { settlements } = req.body;
     const { companyId } = req.user;
 
     if (!settlements || typeof settlements !== "object") {
+      await transaction.rollback();
+
       return res.status(400).json({
         status: false,
         message: "Settlements must be an object grouped by voucher type"
@@ -50,25 +57,64 @@ exports.C_ledger_settlement = async (req, res) => {
        1️⃣ Voucher configuration
     ---------------------------------- */
     const columnMap = {
-      SALE:        { col: "saleId",     model: C_Sale,       amt: "totalMrp",  effect: -1 },
-      RECEIPT:     { col: "receiptId",  model: C_Receipt,    amt: "amount",    effect:  1 },
-      PURCHASE:    { col: "purchaseId", model: C_Purchase,   amt: "totalMrp",  effect:  1 },
-      PAYMENT:     { col: "paymentId",  model: C_Payment,    amt: "amount",    effect: -1 },
-      CREDIT_NOTE: { col: "creditNoId", model: C_CreditNote, amt: "mainTotal", effect:  1 },
-      DEBIT_NOTE:  { col: "debitNoId",  model: C_DebitNote,  amt: "mainTotal", effect: -1 },
+      SALE: {
+        col: "saleId",
+        model: C_Sale,
+        amt: "totalMrp",
+        effect: -1,
+        cashbookFk: 'C_receiptId'
+      },
+      RECEIPT: {
+        col: "receiptId",
+        model: C_Receipt,
+        amt: "amount",
+        effect: 1,
+        cashbookFk: 'C_receiptId'
+      },
+      PURCHASE: {
+        col: "purchaseId",
+        model: C_Purchase,
+        amt: "totalMrp",
+        effect: 1,
+        cashbookFk: 'C_paymentId'
+      },
+      PAYMENT: {
+        col: "paymentId",
+        model: C_Payment,
+        amt: "amount",
+        effect: -1,
+        cashbookFk: 'C_paymentId'
+      },
+      CREDIT_NOTE: {
+        col: "creditNoId",
+        model: C_CreditNote,
+        amt: "mainTotal",
+        effect: 1,
+        cashbookFk: null
+      },
+      DEBIT_NOTE: {
+        col: "debitNoId",
+        model: C_DebitNote,
+        amt: "mainTotal",
+        effect: -1,
+        cashbookFk: null
+      },
     };
 
     let netEffect = 0;
     let ledgerConditions = [];
+    let cashbookConditions = [];
     let accountId = null;
 
     /* ----------------------------------
-       2️⃣ Calculate net effect
+       2️⃣ Calculate net effect & Build Conditions
     ---------------------------------- */
     for (const [type, ids] of Object.entries(settlements)) {
+
       const config = columnMap[type];
 
       if (!config || !Array.isArray(ids) || ids.length === 0) {
+        await transaction.rollback();
         return res.status(400).json({
           status: false,
           message: `Invalid settlement group for type ${type}`
@@ -79,10 +125,12 @@ exports.C_ledger_settlement = async (req, res) => {
         where: {
           id: ids,
           companyId
-        }
+        },
+        transaction
       });
 
       if (!rows.length) {
+        await transaction.rollback();
         return res.status(404).json({
           status: false,
           message: `No records found for ${type}`
@@ -96,6 +144,11 @@ exports.C_ledger_settlement = async (req, res) => {
       ledgerConditions.push({
         [config.col]: ids
       });
+      
+      // NEW: Build cashbook deletion conditions
+      if (config.cashbookFk) {
+        cashbookConditions.push({ [config.cashbookFk]: ids });
+      }
     }
 
     /* ----------------------------------
@@ -105,10 +158,12 @@ exports.C_ledger_settlement = async (req, res) => {
       where: {
         companyId,
         [Sequelize.Op.or]: ledgerConditions
-      }
+      },
+      transaction
     });
 
     if (!ledgerRows.length) {
+      await transaction.rollback();
       return res.status(404).json({
         status: false,
         message: "No matching ledger entries found"
@@ -117,8 +172,11 @@ exports.C_ledger_settlement = async (req, res) => {
 
     accountId = ledgerRows[0].accountId;
 
-    // Safety: all vouchers must belong to same account
+    /* ----------------------------------
+       Safety: all entries must belong to same account
+    ---------------------------------- */
     if (ledgerRows.some(r => r.accountId !== accountId)) {
+      await transaction.rollback();
       return res.status(400).json({
         status: false,
         message: "All settlement entries must belong to the same account"
@@ -127,60 +185,71 @@ exports.C_ledger_settlement = async (req, res) => {
 
     /* ----------------------------------
        4️⃣ Update account balance
-          (Cash-specific field)
     ---------------------------------- */
     const accountDetail = await AccountDetails.findOne({
-      where: { accountId }
+      where: { accountId },
+      transaction
     });
 
     if (!accountDetail) {
+      await transaction.rollback();
       return res.status(404).json({
         status: false,
         message: "Account details not found"
       });
     }
 
-    console.log(netEffect, "net");
-
     if (netEffect !== 0) {
-      /**
-       * With separated opening balances:
-       * - Voucher-side uses AccountDetails.balance (for voucher ledger)
-       * - Cash-side uses AccountDetails.cashOpeningBalance (for cash ledger)
-       *
-       * C_ledger_settlement handles cash flow settlements (C_* vouchers),
-       * so we adjust ONLY the cashOpeningBalance field.
-       *
-       * If cashOpeningBalance is null, we assume it's 0 and proceed.
-       * This keeps cash and voucher balances completely independent.
-       */
-      const currentCashBalance = accountDetail.cashOpeningBalance ?? 0;
-      await accountDetail.update({
-        cashOpeningBalance: currentCashBalance + netEffect,
-      });
+      const currentCashBalance =
+        accountDetail.cashOpeningBalance ?? 0;
+
+      await accountDetail.update(
+        {
+          cashOpeningBalance:
+            currentCashBalance + netEffect,
+        },
+        { transaction }
+      );
     }
 
     /* ----------------------------------
-       5️⃣ Delete ledger entries
+       5️⃣ Soft delete ledger entries
     ---------------------------------- */
     await C_Ledger.destroy({
       where: {
         id: ledgerRows.map(r => r.id),
         companyId
-      }
+      },
+      transaction
     });
 
     /* ----------------------------------
-       6️⃣ Delete source vouchers
+       6️⃣ Soft delete source vouchers
     ---------------------------------- */
     for (const [type, ids] of Object.entries(settlements)) {
       await columnMap[type].model.destroy({
         where: {
           id: ids,
           companyId
-        }
+        },
+        transaction
       });
     }
+    
+    /* ----------------------------------
+       7️⃣ Soft delete cashbook entries (NEW)
+    ---------------------------------- */
+    if (cashbookConditions.length > 0) {
+      await C_Cashbook.destroy({
+        where: {
+          companyId,
+          [Sequelize.Op.or]: cashbookConditions
+        },
+        transaction
+      });
+    }
+
+    await transaction.commit();
 
     return res.status(200).json({
       status: true,
@@ -189,6 +258,7 @@ exports.C_ledger_settlement = async (req, res) => {
     });
 
   } catch (error) {
+    await transaction.rollback();
     console.error("SETTLEMENT ERROR:", error);
     return res.status(500).json({
       status: false,
@@ -196,6 +266,7 @@ exports.C_ledger_settlement = async (req, res) => {
     });
   }
 };
+
 
 exports.account_ledger = async (req, res) => {
   try {

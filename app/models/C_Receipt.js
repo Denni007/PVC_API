@@ -16,8 +16,9 @@ const C_Receipt = sequelize.define('P_C_Receipt', {
     createdBy:{type: DataTypes.INTEGER},
     updatedBy:{type:DataTypes.INTEGER},
     companyId: {type: DataTypes.INTEGER},
-    receiptNo: {type: DataTypes.INTEGER, allowNull: false},
-    isActive: {type: DataTypes.BOOLEAN, defaultValue: 1}
+    receiptNo: {type: DataTypes.INTEGER, allowNull: false}
+}, {
+    paranoid: true
 });
 
 company.hasMany(C_Receipt,{foreignKey:'companyId',onDelete:'CASCADE'});

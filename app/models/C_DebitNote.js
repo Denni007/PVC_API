@@ -30,6 +30,8 @@ const C_DebitNote = sequelize.define("P_C_DebitNote", {
     companyId: {type: DataTypes.INTEGER},
     createdBy: { type: DataTypes.INTEGER },
     updatedBy: { type: DataTypes.INTEGER },
+}, {
+    paranoid: true
 });
 
 User.hasMany(C_DebitNote, { foreignKey: "createdBy", as: "debitCreateUserCash" });

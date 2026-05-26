@@ -8,9 +8,9 @@ const BomItem = sequelize.define("P_BomItem", {
     qty: { type: DataTypes.FLOAT, allowNull: false },
     bomId: { type: DataTypes.INTEGER, allowNull: false },
     unit: {type: DataTypes.STRING, allowNull: false,},
-});
+}, { paranoid: true });
 
-Bom.hasMany(BomItem, { foreignKey: "bomId", as: "bomItems" });
+Bom.hasMany(BomItem, { foreignKey: "bomId", as: "bomItems", onDelete: "CASCADE" });
 BomItem.belongsTo(Bom, { foreignKey: "bomId", as: "bomItems" });
 
 

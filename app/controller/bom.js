@@ -4,7 +4,7 @@ const Product = require("../models/product");
 const User = require("../models/user");
 const { Sequelize } = require("sequelize");
 const Stock = require("../models/stock");
-// const Wastage = require("../models/Wastage");
+const sequelize = require("../config/index");
 
 exports.create_bom = async (req, res) => {
     try {
@@ -575,28 +575,34 @@ exports.delete_bom = async (req, res) => {
 }
 
 exports.settlement_delete_bom = async (req, res) => {
+    const transaction = await sequelize.transaction();
     try {
         const companyId = req.user.companyId;
         const { bomId } = req.params;
 
-        const bomExist = await Bom.findOne({ where: { id: bomId, companyId: companyId } })
+        const bomExist = await Bom.findOne({ where: { id: bomId, companyId: companyId }, transaction });
         if (!bomExist) {
+            await transaction.rollback();
             return res.status(404).json({
                 status: "false",
                 message: "Production Not Found."
-            })
+            });
         }
 
-        await bomExist.destroy()
+        await BomItem.destroy({ where: { bomId: bomExist.id }, transaction });
+        await bomExist.destroy({ transaction });
+        
+        await transaction.commit();
         return res.status(200).json({
             status: "true",
             message: "Production delete successfully.",
-        })
+        });
     } catch (e) {
+        await transaction.rollback();
         console.log(e);
         return res.status(500).json({
             status: "false",
             message: "Internal Server Error.",
-        })
+        });
     }
 }
