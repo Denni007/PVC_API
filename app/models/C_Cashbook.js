@@ -13,6 +13,8 @@ const C_Cashbook = sequelize.define("P_C_Cashbook", {
     C_receiptId: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
     companyId: { type: DataTypes.INTEGER, allowNull: false },
     date: { type: DataTypes.DATEONLY, allowNull: false },
+}, {
+    paranoid: true
 });
 
 company.hasMany(C_Cashbook,{foreignKey:'companyId',onDelete:'CASCADE'});

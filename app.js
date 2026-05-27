@@ -9,6 +9,7 @@ const app = express();
 const port = process.env.PORT;
 const createTunnel = require("./app/config/sshTunnel");
 const sequelize = require("./app/config/index"); // Make sure this path is correct
+require("./app/models/loyaltyModels");
 
 const logRequestMiddleware = (req, res, next) => {
   const logDate = moment().format("DD-MM-YYYY");
@@ -70,7 +71,7 @@ const startServer = async () => {
     await createTunnel();
 
     await sequelize.authenticate();
-    console.log("✅ DB connected");
+    console.log(`✅ DB connected on port ${sequelize.config.port}`);
 
     await sequelize.sync();
     console.log("✅ All tables were successfully synchronized.");

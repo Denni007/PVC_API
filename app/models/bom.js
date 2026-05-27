@@ -37,7 +37,7 @@ const Bom = sequelize.define("P_Bom", {
         type: DataTypes.INTEGER,
         allowNull: false
     }
-});
+}, { paranoid: true });
 
 User.hasMany(Bom, { foreignKey: "updatedBy", as: "bomUpdatedUser" });
 Bom.belongsTo(User, { foreignKey: "updatedBy", as: "bomUpdatedUser" });

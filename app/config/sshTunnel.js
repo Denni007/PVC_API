@@ -49,13 +49,18 @@ const createTunnel = () => {
         });
 
         server.on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                console.log(`Port ${tunnelOptions.srcPort} is already in use. Assuming tunnel is established by another instance.`);
+                sshClient.end();
+                return resolve();
+            }
             console.error("Local server error:", err);
             sshClient.end();
             reject(err);
         });
 
         server.listen(tunnelOptions.srcPort, tunnelOptions.srcHost, () => {
-            console.log(`Local tunnel server listening on ${tunnelOptions.srcHost}:${tunnelOptions.srcPort}`);
+            console.log(`Local tunnel server listening on ${tunnelOptions.srcHost}:${tunnelOptions.srcPort} -> routing to ${tunnelOptions.dstHost}:${tunnelOptions.dstPort}`);
             sshClient.on('ready', () => {
                 console.log('SSH client ready.');
                 resolve();
