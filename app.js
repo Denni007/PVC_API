@@ -42,9 +42,9 @@ require("./app/util/cron");
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "app", "views"));
 const corsOptions = {
-  origin: [
-    "https://accountsv2.harekrishnaindustries.com"
-  ],
+  origin: process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",").map(origin => origin.trim())
+  : [],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
